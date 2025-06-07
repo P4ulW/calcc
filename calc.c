@@ -7,7 +7,7 @@
 typedef struct string {
     char *chars;
     int len;
-} string_t;
+} String;
 
 enum TokenType {
     NumberToken  = 1,
@@ -22,23 +22,23 @@ enum TokenType {
 typedef struct token {
     enum TokenType type;
     uint start;
-} token_t;
+} Token;
 
-string_t StringFromChars(char *chars)
+String StringFromChars(char *chars)
 {
     int i  = 0;
     char c = chars[i];
     while ('\0' != c) {
         c = chars[++i];
     }
-    string_t str = {};
-    str.chars    = chars;
-    str.len      = i;
+    String str = {};
+    str.chars  = chars;
+    str.len    = i;
     return str;
 }
 
 typedef struct ast_node {
-};
+} AstNode;
 
 /*
  * TODO:
@@ -47,7 +47,7 @@ typedef struct ast_node {
  * - Write eval function
  */
 
-int GetTokenNumber(const string_t *str, int offset)
+int get_token_number(const String *str, int offset)
 {
     int i      = offset;
     int lenght = 0;
@@ -63,7 +63,7 @@ int GetTokenNumber(const string_t *str, int offset)
     return lenght;
 }
 
-void Tokenize(token_t *token_list, const string_t str)
+void tokenize(Token *token_list, const String str)
 {
     int lenght    = str.len;
     int token_idx = 0;
@@ -71,8 +71,8 @@ void Tokenize(token_t *token_list, const string_t str)
     for (int i = 0; i < lenght; ++i) {
         char current_char = str.chars[i];
         if (current_char >= '0' && current_char <= '9') {
-            int token_len         = GetTokenNumber(&str, i);
-            token_t token         = {NumberToken, i};
+            int token_len         = get_token_number(&str, i);
+            Token token           = {NumberToken, i};
             token_list[token_idx] = token;
             ++token_idx;
             i += token_len;
@@ -80,22 +80,22 @@ void Tokenize(token_t *token_list, const string_t str)
             printf("Number Token with lenght: %d\n", token_len);
 
         } else if ('*' == current_char) {
-            token_t token         = {MultipyToken, i};
+            Token token           = {MultipyToken, i};
             token_list[token_idx] = token;
             ++token_idx;
 
         } else if ('\\' == current_char) {
-            token_t token         = {DivideToken, i};
+            Token token           = {DivideToken, i};
             token_list[token_idx] = token;
             ++token_idx;
 
         } else if ('+' == current_char) {
-            token_t token         = {PlusToken, i};
+            Token token           = {PlusToken, i};
             token_list[token_idx] = token;
             ++token_idx;
 
         } else if ('-' == current_char) {
-            token_t token         = {MinusToken, i};
+            Token token           = {MinusToken, i};
             token_list[token_idx] = token;
             ++token_idx;
 
@@ -117,10 +117,10 @@ int main()
     char *string = "120 + 200 + 123 + 203 + 4322000";
     printf("test calc\n---------\n");
     printf("%s\n", string);
-    string_t str = StringFromChars(string);
+    String str = StringFromChars(string);
     printf("String string %s, len: %d\n", str.chars, str.len);
-    token_t *token_list = (token_t *)malloc(10 * sizeof(token_t));
-    Tokenize(token_list, str);
+    Token *token_list = (Token *)malloc(10 * sizeof(Token));
+    tokenize(token_list, str);
 
     for (int i = 0; i < 1000; ++i) {
         printf("%u\t%u\n", token_list[i].type, token_list[i].start);
