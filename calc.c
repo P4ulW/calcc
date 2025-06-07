@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "arena.c"
+#include "arena.h"
 
 /*
  * TODO:
@@ -24,6 +25,7 @@ enum TokenType {
     Token_Div,
     Token_Add,
     Token_Sub,
+    Token_Max
 };
 
 typedef struct string {
@@ -46,6 +48,28 @@ enum {
     NodeType_Div
 };
 
+typedef u32 Precedence;
+enum {
+    Precedence_Min,
+    Precedence_Term,
+    Precedence_Factor,
+    Precedence_Power,
+};
+
+typedef struct Parser {
+    Token *tokenlist;
+    Token current;
+    u32 curr_token_idx;
+    String str;
+} Parser;
+
+GLOBAL_VARIABLE Precedence precedence_lookup[Token_Max] = {
+    [Token_Add] = Precedence_Term,
+    [Token_Sub] = Precedence_Term,
+    [Token_Div] = Precedence_Factor,
+    [Token_Mul] = Precedence_Factor,
+};
+
 typedef struct ExpressionNode ExpressionNode;
 struct ExpressionNode {
     ExpressionNodeKind type;
@@ -66,17 +90,19 @@ String StringFromChars(char *chars);
 i32 get_token_number(const String *str, i32 offset);
 void tokenize(Token *token_list, const String str);
 f64 evaluate(ExpressionNode *node);
-void push_arg(Token token);
-void push_op(Token token);
 f64 number_from_token(Token token, const String *str);
-Token pop_arg();
-Token pop_op();
+void parser_advance(Parser *parser);
+f64 number_from_token(Token token, const String *str);
+ExpressionNode *
+parser_parse_expression(Arena *arena, Parser *parser, Precedence prev_prec);
+ExpressionNode *parser_parse_infix_expr(
+    Arena *arena, Parser *parser, Token operator, ExpressionNode * left);
 
 i32 main()
 {
     Arena arena;
     arena_init(&arena, 4096);
-    char *string = "12.01 - 200 * 123 + 203 / 4322000";
+    char *string = "12.01 - 200";
     printf("test calc\n---------\n");
     printf("%s\n", string);
     String str = StringFromChars(string);
@@ -84,18 +110,25 @@ i32 main()
     Token *token_list = (Token *)arena_alloc(&arena, 100 * sizeof(Token));
     tokenize(token_list, str);
 
+    Parser parser = {
+        .tokenlist      = token_list,
+        .current        = token_list[0],
+        .curr_token_idx = 0,
+        .str            = str};
+
     i32 i;
     for (i = 0; i < 10; ++i) {
         printf("%u\t%u\n", token_list[i].type, token_list[i].start);
     }
 
-    ExpressionNode left_node  = {NodeType_Number, 1123.04032};
-    ExpressionNode right_node = {NodeType_Number, 23.3};
-    ExpressionNode top_node   = {
-        NodeType_Mul, {.binary = {&left_node, &right_node}}};
-    f64 result = evaluate(&top_node);
+    /*ExpressionNode left_node  = {NodeType_Number, 1123.04032};*/
+    /*ExpressionNode right_node = {NodeType_Number, 23.3};*/
+    /*ExpressionNode top_node   = {*/
+    /*    NodeType_Mul, {.binary = {&left_node, &right_node}}};*/
+    /**/
+    /*f64 result = evaluate(&top_node);*/
 
-    printf("result: %.2e\n", result);
+    /*printf("result: %.2e\n", result);*/
 
     arena_free(&arena);
     return 0;
@@ -119,12 +152,6 @@ f64 evaluate(ExpressionNode *node)
     }
     return 0.0;
 }
-
-typedef struct Parser {
-    Token *tokenlist;
-    Token current;
-    u32 curr_token_idx;
-} Parser;
 
 void parser_advance(Parser *parser)
 {
@@ -157,6 +184,58 @@ parser_parse_number(Arena *arena, Parser *parser, const String *str)
     parser_advance(parser);
     return node;
 }
+
+ExpressionNode *parser_parse_infix_expr(
+    Arena *arena, Parser *parser, Token operator, ExpressionNode * left)
+{
+    ExpressionNode *ret_node = arena_alloc(arena, sizeof(ExpressionNode));
+    switch (operator.type) {
+        case Token_Add:
+            ret_node->type = NodeType_Add;
+            break;
+
+        case Token_Sub:
+            ret_node->type = NodeType_Sub;
+            break;
+
+        case Token_Mul:
+            ret_node->type = NodeType_Mul;
+            break;
+
+        case Token_Div:
+            ret_node->type = NodeType_Div;
+            break;
+        default:
+            printf(
+                "ParseException. Got wrong token %d at position %d!\n",
+                operator.type,
+                operator.start);
+    }
+
+    ret_node->binary.left = left;
+    ret_node->binary.right = parser_parse_expression(arena, parser, precedence_lookup[operator.type]);
+    return ret_node;
+}
+
+ExpressionNode *
+parser_parse_expression(Arena *arena, Parser *parser, Precedence prev_prec)
+{
+    /*Recurvise*/
+    ExpressionNode *left = parser_parse_number(arena, parser, &parser->str);
+    Token curr_operator  = parser->current;
+    Precedence curr_prec = precedence_lookup[curr_operator.type];
+    while (Precedence_Min != curr_prec) {
+        if (prev_prec >= curr_prec) {
+            break;
+        } else {
+            parser_advance(parser);
+            left = parser_parse_infix_expr(arena, parser, curr_operator, left);
+            curr_operator = parser->current;
+            curr_prec     = precedence_lookup[curr_operator.type];
+        }
+    }
+    return left;
+};
 
 void tokenize(Token *token_list, const String str)
 {
