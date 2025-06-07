@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "arena.c"
 
 /*
  * TODO:
@@ -16,22 +17,13 @@ typedef double f64;
 typedef uint32_t u32;
 typedef int32_t i32;
 
-enum Tag {
-    multiply,
-    divide,
-    plus,
-    minus,
-    integer,
-};
-
 enum TokenType {
-    NumberToken  = 1,
-    MultipyToken = 3,
-    DivideToken  = 5,
-    PlusToken    = 7,
-    MinusToken   = 11,
-    InvalidToken = -1
-
+    Token_Error = -1,
+    Token_Number,
+    Token_Mul,
+    Token_Div,
+    Token_Add,
+    Token_Sub,
 };
 
 typedef struct string {
@@ -54,7 +46,7 @@ enum {
     NodeType_Div
 };
 
-typedef struct ExpresssionNode ExpressionNode;
+typedef struct ExpressionNode ExpressionNode;
 struct ExpressionNode {
     ExpressionNodeKind type;
 
@@ -73,27 +65,23 @@ struct ExpressionNode {
 String StringFromChars(char *chars);
 i32 get_token_number(const String *str, i32 offset);
 void tokenize(Token *token_list, const String str);
-i32 evaluate(Token *token_list, f64 *value);
+f64 evaluate(ExpressionNode *node);
 void push_arg(Token token);
 void push_op(Token token);
+f64 number_from_token(Token token, const String *str);
 Token pop_arg();
 Token pop_op();
 
-GLOBAL_VARIABLE Token operator_stack[256];
-GLOBAL_VARIABLE Token arg_stack[256];
-GLOBAL_VARIABLE u32 arg_sptr = 0, op_sptr = 0;
-GLOBAL_VARIABLE i32 state = 0; /* 0 = Awaiting expression
-                                  1 = Awaiting operator
-                               */
-
 i32 main()
 {
-    char *string = "120 - 200 * 123 + 203 / 4322000";
+    Arena arena;
+    arena_init(&arena, 4096);
+    char *string = "12.01 - 200 * 123 + 203 / 4322000";
     printf("test calc\n---------\n");
     printf("%s\n", string);
     String str = StringFromChars(string);
     printf("String %s, len: %d\n", str.chars, str.len);
-    Token *token_list = (Token *)malloc(10 * sizeof(Token));
+    Token *token_list = (Token *)arena_alloc(&arena, 100 * sizeof(Token));
     tokenize(token_list, str);
 
     i32 i;
@@ -101,26 +89,73 @@ i32 main()
         printf("%u\t%u\n", token_list[i].type, token_list[i].start);
     }
 
-    f64 result = 0.0;
-    evaluate(token_list, &result);
+    ExpressionNode left_node  = {NodeType_Number, 1123.04032};
+    ExpressionNode right_node = {NodeType_Number, 23.3};
+    ExpressionNode top_node   = {
+        NodeType_Mul, {.binary = {&left_node, &right_node}}};
+    f64 result = evaluate(&top_node);
+
     printf("result: %.2e\n", result);
 
-    free(token_list);
+    arena_free(&arena);
     return 0;
 }
 
-i32 evaluate(Token *token_list, f64 *value)
+f64 evaluate(ExpressionNode *node)
 {
-    i32 index;
-    for (index = 0; token_list[index].type != 0; ++index) {
-        switch (state) {
-            case 0: /* awaiting operator */
-                push_arg(token_list[index]);
-            case 1: /* awaiting operator */
-                break;
-        }
+    switch (node->type) {
+        case NodeType_Number:
+            return node->number;
+            break;
+
+        case NodeType_Add:
+            return evaluate(node->binary.left) + evaluate(node->binary.right);
+        case NodeType_Div:
+            return evaluate(node->binary.left) / evaluate(node->binary.right);
+        case NodeType_Mul:
+            return evaluate(node->binary.left) * evaluate(node->binary.right);
+        case NodeType_Sub:
+            return evaluate(node->binary.left) - evaluate(node->binary.right);
     }
-    return 0;
+    return 0.0;
+}
+
+typedef struct Parser {
+    Token *tokenlist;
+    Token current;
+    u32 curr_token_idx;
+} Parser;
+
+void parser_advance(Parser *parser)
+{
+    parser->curr_token_idx++;
+    parser->current = parser->tokenlist[parser->curr_token_idx];
+}
+
+f64 number_from_token(Token token, const String *str)
+{
+    char *start = &str->chars[token.start];
+    char *endptr;
+    f64 result;
+
+    result = strtod(start, &endptr);
+
+    if (endptr == start) {
+        fprintf(
+            stderr, "Error: No conversion performed for string '%s'.\n", start);
+        return 0.0f;
+    }
+    return result;
+}
+
+ExpressionNode *
+parser_parse_number(Arena *arena, Parser *parser, const String *str)
+{
+    ExpressionNode *node = arena_alloc(arena, sizeof(ExpressionNode));
+    node->type           = NodeType_Number;
+    node->number         = number_from_token(parser->current, str);
+    parser_advance(parser);
+    return node;
 }
 
 void tokenize(Token *token_list, const String str)
@@ -133,7 +168,7 @@ void tokenize(Token *token_list, const String str)
         char current_char = str.chars[i];
         if (current_char >= '0' && current_char <= '9') {
             i32 token_len         = get_token_number(&str, i);
-            Token token           = {NumberToken, i};
+            Token token           = {Token_Number, i};
             token_list[token_idx] = token;
             ++token_idx;
             i += token_len;
@@ -141,25 +176,25 @@ void tokenize(Token *token_list, const String str)
             printf("NumberToken with lenght: %d\n", token_len);
 
         } else if ('*' == current_char) {
-            Token token           = {MultipyToken, i};
+            Token token           = {Token_Mul, i};
             token_list[token_idx] = token;
             printf("MultipyToken\n");
             ++token_idx;
 
         } else if ('/' == current_char) {
-            Token token           = {DivideToken, i};
+            Token token           = {Token_Div, i};
             token_list[token_idx] = token;
             printf("DivideToken\n");
             ++token_idx;
 
         } else if ('+' == current_char) {
-            Token token           = {PlusToken, i};
+            Token token           = {Token_Add, i};
             token_list[token_idx] = token;
             printf("PlusToken\n");
             ++token_idx;
 
         } else if ('-' == current_char) {
-            Token token           = {MinusToken, i};
+            Token token           = {Token_Sub, i};
             token_list[token_idx] = token;
             printf("MinusToken\n");
             ++token_idx;
@@ -182,7 +217,8 @@ i32 get_token_number(const String *str, i32 offset)
     i32 i      = offset;
     i32 lenght = 0;
     do {
-        if (!(str->chars[i] >= '0' && str->chars[i] <= '9')) {
+        if (!((str->chars[i] >= '0' && str->chars[i] <= '9') ||
+              (str->chars[i] == '.'))) {
             break;
         }
         ++i;
@@ -205,11 +241,3 @@ String StringFromChars(char *chars)
     str.len    = i;
     return str;
 }
-
-void push_arg(Token token)
-{
-    arg_stack[arg_sptr++] = token;
-}
-void push_op(Token token);
-Token pop_arg();
-Token pop_op();
