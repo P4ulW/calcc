@@ -1,6 +1,8 @@
 #include "arena.h"
 #include "calc.c"
 #include <math.h>
+#include <sys/time.h>
+#include <time.h>
 
 f64 eval(String expr)
 {
@@ -40,6 +42,8 @@ f64 eval(String expr)
 
 int main()
 {
+
+    clock_t start_time = clock();
 
     f64 result;
     f64 expected;
@@ -106,5 +110,10 @@ int main()
     printf("Total Tests: %d\n", total_tests);
     printf("Tests Passed: %d\n", tests_passed);
     printf("Tests Failed: %d\n", total_tests - tests_passed);
+
+    clock_t end_time = clock();
+    double cpu_time_used =
+        ((double)(end_time - start_time)) / CLOCKS_PER_SEC * 1000 * 1000;
+    printf("CPU time taken: %f µs\n", cpu_time_used);
     return 0;
 }
