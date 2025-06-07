@@ -2,12 +2,26 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "vec.h"
+/*
+ * TODO:
+ * - Write token calc function for numbers (ints first)
+ * - Write Tokens to AST
+ * - Write eval function
+ */
 
-typedef struct string {
-    char *chars;
-    int len;
-} String;
+#define GLOBAL_VARIABLE static;
+typedef float f32;
+typedef double f64;
+typedef uint32_t u32;
+typedef int32_t i32;
+
+enum Tag {
+    multiply,
+    divide,
+    plus,
+    minus,
+    integer,
+};
 
 enum TokenType {
     NumberToken  = 1,
@@ -19,84 +33,118 @@ enum TokenType {
 
 };
 
+typedef struct string {
+    char *chars;
+    int len;
+} String;
+
 typedef struct token {
     enum TokenType type;
-    uint start;
+    u32 start;
 } Token;
 
-String StringFromChars(char *chars)
-{
-    int i  = 0;
-    char c = chars[i];
-    while ('\0' != c) {
-        c = chars[++i];
-    }
-    String str = {};
-    str.chars  = chars;
-    str.len    = i;
-    return str;
-}
-
 typedef struct ast_node {
+    enum Tag tag;
+    u32 main_token;
+    struct {
+        u32 lhs;
+        u32 rhs;
+    } data;
+
 } AstNode;
 
-/*
- * TODO:
- * - Write token calc function for numbers (ints first)
- * - Write Tokens to AST
- * - Write eval function
- */
+String StringFromChars(char *chars);
+i32 get_token_number(const String *str, i32 offset);
+void tokenize(Token *token_list, const String str);
+i32 evaluate(Token *token_list, f64 *value);
+void push_arg(Token token);
+void push_op(Token token);
+Token pop_arg();
+Token pop_op();
 
-int get_token_number(const String *str, int offset)
+GLOBAL_VARIABLE Token operator_stack[256];
+GLOBAL_VARIABLE f64 arg_stack[256];
+GLOBAL_VARIABLE u32 arg_sptr = 0, op_sptr = 0;
+GLOBAL_VARIABLE i32 state = 0; /* 0 = Awaiting expression
+                                  1 = Awaiting operator
+                               */
+
+i32 main()
 {
-    int i      = offset;
-    int lenght = 0;
-    do {
-        if (!(str->chars[i] >= '0' && str->chars[i] <= '9')) {
-            break;
+    char *string = "120 - 200 * 123 + 203 / 4322000";
+    printf("test calc\n---------\n");
+    printf("%s\n", string);
+    String str = StringFromChars(string);
+    printf("String %s, len: %d\n", str.chars, str.len);
+    Token *token_list = (Token *)malloc(10 * sizeof(Token));
+    tokenize(token_list, str);
+
+    i32 i;
+    for (i = 0; i < 10; ++i) {
+        printf("%u\t%u\n", token_list[i].type, token_list[i].start);
+    }
+
+    f64 result = 0.0;
+    evaluate(token_list, &result);
+    printf("result: %.2e\n", result);
+
+    free(token_list);
+    return 0;
+}
+
+i32 evaluate(Token *token_list, f64 *value)
+{
+    i32 index;
+    for (index = 0; token_list[index].type != 0; ++index) {
+        switch (state) {
+            case 0: /* awaiting operator */
+                push_arg(token_list[index]);
+            case 1: /* awaiting operator */
+                break;
         }
-        ++i;
-        ++lenght;
-
-    } while (i < str->len);
-
-    return lenght;
+    }
+    return 0;
 }
 
 void tokenize(Token *token_list, const String str)
 {
-    int lenght    = str.len;
-    int token_idx = 0;
+    i32 lenght    = str.len;
+    i32 token_idx = 0;
 
-    for (int i = 0; i < lenght; ++i) {
+    i32 i;
+    for (i = 0; i < lenght; ++i) {
         char current_char = str.chars[i];
         if (current_char >= '0' && current_char <= '9') {
-            int token_len         = get_token_number(&str, i);
+            i32 token_len         = get_token_number(&str, i);
             Token token           = {NumberToken, i};
             token_list[token_idx] = token;
             ++token_idx;
             i += token_len;
 
-            printf("Number Token with lenght: %d\n", token_len);
+            printf("NumberToken with lenght: %d\n", token_len);
 
         } else if ('*' == current_char) {
             Token token           = {MultipyToken, i};
             token_list[token_idx] = token;
+            printf("MultipyToken\n");
             ++token_idx;
 
-        } else if ('\\' == current_char) {
+        } else if ('/' == current_char) {
             Token token           = {DivideToken, i};
             token_list[token_idx] = token;
+            printf("DivideToken\n");
             ++token_idx;
 
         } else if ('+' == current_char) {
             Token token           = {PlusToken, i};
             token_list[token_idx] = token;
+            printf("PlusToken\n");
             ++token_idx;
 
         } else if ('-' == current_char) {
             Token token           = {MinusToken, i};
             token_list[token_idx] = token;
+            printf("MinusToken\n");
             ++token_idx;
 
         } else if (' ' == current_char) {
@@ -112,20 +160,39 @@ void tokenize(Token *token_list, const String str)
     return;
 }
 
-int main()
+i32 get_token_number(const String *str, i32 offset)
 {
-    char *string = "120 + 200 + 123 + 203 + 4322000";
-    printf("test calc\n---------\n");
-    printf("%s\n", string);
-    String str = StringFromChars(string);
-    printf("String string %s, len: %d\n", str.chars, str.len);
-    Token *token_list = (Token *)malloc(10 * sizeof(Token));
-    tokenize(token_list, str);
+    i32 i      = offset;
+    i32 lenght = 0;
+    do {
+        if (!(str->chars[i] >= '0' && str->chars[i] <= '9')) {
+            break;
+        }
+        ++i;
+        ++lenght;
 
-    for (int i = 0; i < 1000; ++i) {
-        printf("%u\t%u\n", token_list[i].type, token_list[i].start);
-    }
+    } while (i < str->len);
 
-    free(token_list);
-    return 0;
+    return lenght;
 }
+
+String StringFromChars(char *chars)
+{
+    i32 i  = 0;
+    char c = chars[i];
+    while ('\0' != c) {
+        c = chars[++i];
+    }
+    String str = {};
+    str.chars  = chars;
+    str.len    = i;
+    return str;
+}
+
+void push_arg(Token token)
+{
+    arg_stack[arg_sptr++] = token;
+}
+void push_op(Token token);
+Token pop_arg();
+Token pop_op();
