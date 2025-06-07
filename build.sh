@@ -1,1 +1,2 @@
-gcc -O2 calc.c --std=c89 -lm
+gcc -O2 main.c --std=c89 -lm -o calc
+

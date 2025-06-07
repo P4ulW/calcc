@@ -6,6 +6,8 @@
 #include "arena.c"
 #include "arena.h"
 
+#define DEBUG 0
+
 typedef float f32;
 typedef double f64;
 typedef uint32_t u32;
@@ -118,93 +120,6 @@ static Precedence precedence_lookup[Token_Max] = {
     [Token_Star]  = Precedence_Factor,
     [Token_Caret] = Precedence_Power,
 };
-
-/*               Main              */
-/*  =============================  */
-i32 main(int argc, char *argv[])
-{
-    /*printf("argument count: %d\n", argc);*/
-    Arena arena;
-    u32 index = 0;
-
-    do {
-        String argument = StringNew(argv[index]);
-
-        /*printf("arg%d: %s\n", i, argument.chars);*/
-        if (StringCompare(argument, StringNew("-h"))) {
-            printf("Usage:\ncalc <no args>:\n\ttype your expression and press "
-                   "enter.\n");
-            printf("\ncalc -i 'expression':\n\tcomputes the entered expression "
-                   "and quits");
-            return 0;
-        }
-    } while (++index < argc);
-
-    index             = 0;
-    String expression = {};
-    do {
-        String argument = StringNew(argv[index]);
-        if (StringCompare(argument, StringNew("-i"))) {
-            expression = StringNew(argv[index + 1]);
-            break;
-        }
-    } while (++index < argc);
-
-    if (!(expression.chars == NULL)) {
-        arena_init(&arena, ARENA_SIZE);
-        printf("\n%s =", expression.chars);
-
-        Token *token_list =
-            (Token *)arena_alloc(&arena, expression.len * sizeof(Token));
-        tokenize(token_list, expression);
-
-        Parser parser = {
-            .tokenlist      = token_list,
-            .current        = token_list[0],
-            .curr_token_idx = 0,
-            .str            = expression};
-
-        ExpressionNode *node_root =
-            parser_parse_expression(&arena, &parser, Precedence_Min);
-        /*pretty_print_expression_node(node_root, 0);*/
-
-        f64 result = evaluate(node_root);
-        printf("%.3e \n", result);
-
-        /*clean up*/
-        arena_free(&arena);
-        return 0;
-    }
-
-    arena_init(&arena, ARENA_SIZE);
-    char input[INPUT_BUFFER_SIZE];
-    printf("\x1b[32mPlease input your expression: \x1b[0m");
-    fgets(input, INPUT_BUFFER_SIZE, stdin);
-    input[strcspn(input, "\n")] = 0;
-
-    printf("%s = ", input);
-    String str        = StringNew(input);
-    Token *token_list = (Token *)arena_alloc(&arena, str.len * sizeof(Token));
-    tokenize(token_list, str);
-
-    Parser parser = {
-        .tokenlist      = token_list,
-        .current        = token_list[0],
-        .curr_token_idx = 0,
-        .str            = str};
-
-    ExpressionNode *node_root =
-        parser_parse_expression(&arena, &parser, Precedence_Min);
-    /*pretty_print_expression_node(node_root, 0);*/
-
-    f64 result = evaluate(node_root);
-    printf("\x1b[4m\x1b[33m%.3e\x1b[0m\n", result);
-
-    /*clean up*/
-    arena_free(&arena);
-    return 0;
-}
-/*====================================================== */
 
 f64 evaluate(ExpressionNode *node)
 {
@@ -439,48 +354,64 @@ void tokenize(Token *token_list, const String str)
             ++token_idx;
             i += token_len - 1;
 
-            /*printf("NumberToken with lenght: %d\n", token_len);*/
+            if (DEBUG) {
+                printf("NumberToken with lenght: %d\n", token_len);
+            }
 
         } else if ('*' == current_char) {
             Token token           = {Token_Star, i};
             token_list[token_idx] = token;
-            /*printf("MultipyToken\n");*/
+            if (DEBUG) {
+                printf("MultipyToken\n");
+            }
             ++token_idx;
 
         } else if ('(' == current_char) {
             Token token           = {Token_ParensOpen, i};
             token_list[token_idx] = token;
-            /*printf("ParensOpenToken\n");*/
+            if (DEBUG) {
+                printf("ParensOpenToken\n");
+            }
             ++token_idx;
 
         } else if (')' == current_char) {
             Token token           = {Token_ParensClose, i};
             token_list[token_idx] = token;
-            /*printf("ParensCloseToken\n");*/
+            if (DEBUG) {
+                printf("ParensCloseToken\n");
+            }
             ++token_idx;
 
         } else if ('/' == current_char) {
             Token token           = {Token_Slash, i};
             token_list[token_idx] = token;
-            /*printf("DivideToken\n");*/
+            if (DEBUG) {
+                printf("DivideToken\n");
+            }
             ++token_idx;
 
         } else if ('+' == current_char) {
             Token token           = {Token_Plus, i};
             token_list[token_idx] = token;
-            /*printf("PlusToken\n");*/
+            if (DEBUG) {
+                printf("PlusToken\n");
+            }
             ++token_idx;
 
         } else if ('-' == current_char) {
             Token token           = {Token_Minus, i};
             token_list[token_idx] = token;
-            /*printf("MinusToken\n");*/
+            if (DEBUG) {
+                printf("MinusToken\n");
+            }
             ++token_idx;
 
         } else if ('^' == current_char) {
             Token token           = {Token_Caret, i};
             token_list[token_idx] = token;
-            /*printf("CaretToken\n");*/
+            if (DEBUG) {
+                printf("CaretToken\n");
+            }
             ++token_idx;
 
         } else if (' ' == current_char) {
