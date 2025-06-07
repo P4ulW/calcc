@@ -1,1 +1,1 @@
-gcc -O2 calc.c
+gcc -O2 main.c -lm -o calc
