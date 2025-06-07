@@ -1,22 +1,25 @@
 #include <stdint.h>
+#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "arena.c"
 #include "arena.h"
 
-/*
- * TODO:
- * - impl letter into tokenizer (for e.g. pi, e, etc)
- * - Write token calc function for numbers (ints first)
- * - Write Tokens to AST
- * - Write eval function
- */
-
-#define GLOBAL_VARIABLE static;
 typedef float f32;
 typedef double f64;
 typedef uint32_t u32;
 typedef int32_t i32;
+
+typedef float f32;
+typedef double f64;
+typedef uint32_t u32;
+typedef int32_t i32;
+
+#define ARENA_SIZE 4096
+#define INPUT_BUFFER_SIZE 256
+
+/*  Enums  */
+/*  =====  */
 
 enum TokenType {
     Token_Error = 0,
@@ -30,16 +33,6 @@ enum TokenType {
     Token_ParensClose,
     Token_Max
 };
-
-typedef struct string {
-    char *chars;
-    int len;
-} String;
-
-typedef struct token {
-    enum TokenType type;
-    u32 start;
-} Token;
 
 typedef u32 ExpressionNodeKind;
 enum {
@@ -61,19 +54,25 @@ enum {
     Precedence_Power,
 };
 
+/*  Structs  */
+/*  =======  */
+
+typedef struct string {
+    char *chars;
+    u32 len;
+} String;
+
+typedef struct token {
+    enum TokenType type;
+    u32 start;
+} Token;
+
 typedef struct Parser {
     Token *tokenlist;
     Token current;
     u32 curr_token_idx;
     String str;
 } Parser;
-
-GLOBAL_VARIABLE Precedence precedence_lookup[Token_Max] = {
-    [Token_Plus]  = Precedence_Term,
-    [Token_Minus] = Precedence_Term,
-    [Token_Slash] = Precedence_Factor,
-    [Token_Star]  = Precedence_Factor,
-};
 
 typedef struct ExpressionNode ExpressionNode;
 struct ExpressionNode {
@@ -91,7 +90,10 @@ struct ExpressionNode {
     };
 };
 
-String StringFromChars(char *chars);
+/*  Prototypes  */
+/*  ==========  */
+String StringNew(char *chars);
+int StringCompare(String str1, String str2);
 i32 get_token_number(const String *str, i32 offset);
 void tokenize(Token *token_list, const String str);
 f64 evaluate(ExpressionNode *node);
@@ -105,15 +107,80 @@ ExpressionNode *parser_parse_infix_expr(
 void pretty_print_expression_node(const ExpressionNode *node, int indent_level);
 void print_indent(u32 indent_level);
 
-i32 main()
+/*  Globals  */
+/*  =======  */
+static Precedence precedence_lookup[Token_Max] = {
+    [Token_Plus]  = Precedence_Term,
+    [Token_Minus] = Precedence_Term,
+    [Token_Slash] = Precedence_Factor,
+    [Token_Star]  = Precedence_Factor,
+};
+
+/*               Main              */
+/*  =============================  */
+i32 main(int argc, char *argv[])
 {
+    /*printf("argument count: %d\n", argc);*/
     Arena arena;
-    arena_init(&arena, 4096);
-    char *string = "12/2";
-    printf("test calc\n---------\n");
-    printf("%s\n", string);
-    String str = StringFromChars(string);
-    printf("String %s, len: %d\n", str.chars, str.len);
+    u32 index = 0;
+
+    do {
+        String argument = StringNew(argv[index]);
+
+        /*printf("arg%d: %s\n", i, argument.chars);*/
+        if (StringCompare(argument, StringNew("-h"))) {
+            printf("Usage:\ncalc <no args>:\n\ttype your expression and press "
+                   "enter.\n");
+            printf("\ncalc -i 'expression':\n\tcomputes the entered expression "
+                   "and quits");
+            return 0;
+        }
+    } while (++index < argc);
+
+    index             = 0;
+    String expression = {};
+    do {
+        String argument = StringNew(argv[index]);
+        if (StringCompare(argument, StringNew("-i"))) {
+            expression = StringNew(argv[index + 1]);
+            break;
+        }
+    } while (++index < argc);
+
+    if (!(expression.chars == NULL)) {
+        arena_init(&arena, ARENA_SIZE);
+        printf("\n%s =", expression.chars);
+
+        Token *token_list =
+            (Token *)arena_alloc(&arena, expression.len * sizeof(Token));
+        tokenize(token_list, expression);
+
+        Parser parser = {
+            .tokenlist      = token_list,
+            .current        = token_list[0],
+            .curr_token_idx = 0,
+            .str            = expression};
+
+        ExpressionNode *node_root =
+            parser_parse_expression(&arena, &parser, Precedence_Min);
+        /*pretty_print_expression_node(node_root, 0);*/
+
+        f64 result = evaluate(node_root);
+        printf("%.3e \n", result);
+
+        /*clean up*/
+        arena_free(&arena);
+        return 0;
+    }
+
+    arena_init(&arena, ARENA_SIZE);
+    char input[INPUT_BUFFER_SIZE];
+    printf("Please input your expression: ");
+    fgets(input, INPUT_BUFFER_SIZE, stdin);
+    input[strcspn(input, "\n")] = 0;
+
+    printf("%s = ", input);
+    String str        = StringNew(input);
     Token *token_list = (Token *)arena_alloc(&arena, str.len * sizeof(Token));
     tokenize(token_list, str);
 
@@ -123,28 +190,18 @@ i32 main()
         .curr_token_idx = 0,
         .str            = str};
 
-    /*i32 i;*/
-    /*while (token_list[i].type != Token_Error) {*/
-    /*    printf("%u\t%u\n", token_list[i].type, token_list[i].start);*/
-    /*    ++i;*/
-    /*}*/
-
-    ExpressionNode *AST_root =
+    ExpressionNode *node_root =
         parser_parse_expression(&arena, &parser, Precedence_Min);
-    pretty_print_expression_node(AST_root, 0);
+    /*pretty_print_expression_node(node_root, 0);*/
 
-    /*ExpressionNode left_node  = {NodeType_Number, 1123.04032};*/
-    /*ExpressionNode right_node = {NodeType_Number, 23.3};*/
-    /*ExpressionNode top_node   = {*/
-    /*    NodeType_Mul, {.binary = {&left_node, &right_node}}};*/
-    /**/
-    f64 result = evaluate(AST_root);
+    f64 result = evaluate(node_root);
+    printf("%.3e \n", result);
 
-    printf("result: %.7f\n", result);
-
+    /*clean up*/
     arena_free(&arena);
     return 0;
 }
+/*====================================================== */
 
 f64 evaluate(ExpressionNode *node)
 {
@@ -168,12 +225,14 @@ f64 evaluate(ExpressionNode *node)
     }
     return 0.0;
 }
+/*====================================================== */
 
 void parser_advance(Parser *parser)
 {
     parser->curr_token_idx++;
     parser->current = parser->tokenlist[parser->curr_token_idx];
 }
+/*====================================================== */
 
 f64 number_from_token(Token token, const String *str)
 {
@@ -190,6 +249,7 @@ f64 number_from_token(Token token, const String *str)
     }
     return result;
 }
+/*====================================================== */
 
 ExpressionNode *
 parser_parse_number(Arena *arena, Parser *parser, const String *str)
@@ -200,6 +260,7 @@ parser_parse_number(Arena *arena, Parser *parser, const String *str)
     parser_advance(parser);
     return node;
 }
+/*====================================================== */
 
 ExpressionNode *parser_parse_infix_expr(
     Arena *arena, Parser *parser, Token operator, ExpressionNode * left)
@@ -232,6 +293,7 @@ ExpressionNode *parser_parse_infix_expr(
     ret_node->binary.right = parser_parse_expression(arena, parser, precedence_lookup[operator.type]);
     return ret_node;
 }
+/*====================================================== */
 
 ExpressionNode *parser_parse_terminal_expr(Arena *arena, Parser *parser);
 ExpressionNode *parser_parse_terminal_expr(Arena *arena, Parser *parser)
@@ -258,6 +320,7 @@ ExpressionNode *parser_parse_terminal_expr(Arena *arena, Parser *parser)
     }
     return ret_node;
 }
+/*====================================================== */
 
 ExpressionNode *
 parser_parse_expression(Arena *arena, Parser *parser, Precedence prev_prec)
@@ -278,6 +341,7 @@ parser_parse_expression(Arena *arena, Parser *parser, Precedence prev_prec)
     }
     return left;
 };
+/*====================================================== */
 
 void print_indent(u32 indent_level)
 {
@@ -287,6 +351,8 @@ void print_indent(u32 indent_level)
     }
     printf("|-");
 }
+/*====================================================== */
+
 void pretty_print_expression_node(const ExpressionNode *node, int indent_level)
 {
     if (node == NULL) {
@@ -339,6 +405,7 @@ void pretty_print_expression_node(const ExpressionNode *node, int indent_level)
             break;
     }
 }
+/*====================================================== */
 
 void tokenize(Token *token_list, const String str)
 {
@@ -355,42 +422,42 @@ void tokenize(Token *token_list, const String str)
             ++token_idx;
             i += token_len - 1;
 
-            printf("NumberToken with lenght: %d\n", token_len);
+            /*printf("NumberToken with lenght: %d\n", token_len);*/
 
         } else if ('*' == current_char) {
             Token token           = {Token_Star, i};
             token_list[token_idx] = token;
-            printf("MultipyToken\n");
+            /*printf("MultipyToken\n");*/
             ++token_idx;
 
         } else if ('(' == current_char) {
             Token token           = {Token_ParensOpen, i};
             token_list[token_idx] = token;
-            printf("ParensOpenToken\n");
+            /*printf("ParensOpenToken\n");*/
             ++token_idx;
 
         } else if (')' == current_char) {
             Token token           = {Token_ParensClose, i};
             token_list[token_idx] = token;
-            printf("ParensCloseToken\n");
+            /*printf("ParensCloseToken\n");*/
             ++token_idx;
 
         } else if ('/' == current_char) {
             Token token           = {Token_Slash, i};
             token_list[token_idx] = token;
-            printf("DivideToken\n");
+            /*printf("DivideToken\n");*/
             ++token_idx;
 
         } else if ('+' == current_char) {
             Token token           = {Token_Plus, i};
             token_list[token_idx] = token;
-            printf("PlusToken\n");
+            /*printf("PlusToken\n");*/
             ++token_idx;
 
         } else if ('-' == current_char) {
             Token token           = {Token_Minus, i};
             token_list[token_idx] = token;
-            printf("MinusToken\n");
+            /*printf("MinusToken\n");*/
             ++token_idx;
 
         } else if (' ' == current_char) {
@@ -405,6 +472,7 @@ void tokenize(Token *token_list, const String str)
     }
     return;
 }
+/*====================================================== */
 
 i32 get_token_number(const String *str, i32 offset)
 {
@@ -422,8 +490,9 @@ i32 get_token_number(const String *str, i32 offset)
 
     return lenght;
 }
+/*====================================================== */
 
-String StringFromChars(char *chars)
+String StringNew(char *chars)
 {
     i32 i  = 0;
     char c = chars[i];
@@ -434,4 +503,19 @@ String StringFromChars(char *chars)
     str.chars  = chars;
     str.len    = i;
     return str;
+}
+/*====================================================== */
+
+int StringCompare(String str1, String str2)
+{
+    if (!(str1.len == str2.len)) {
+        return 0;
+    }
+    u32 i;
+    for (i = 0; i < str1.len; ++i) {
+        if (!(str1.chars[i] == str2.chars[i])) {
+            return 0;
+        }
+    }
+    return 1;
 }
