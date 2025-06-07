@@ -19,12 +19,15 @@ typedef uint32_t u32;
 typedef int32_t i32;
 
 enum TokenType {
-    Token_Error = -1,
+    Token_Error = 0,
     Token_Number,
-    Token_Mul,
-    Token_Div,
-    Token_Add,
-    Token_Sub,
+    Token_Star,
+    Token_Slash,
+    Token_Plus,
+    Token_Caret,
+    Token_Minus,
+    Token_ParensOpen,
+    Token_ParensClose,
     Token_Max
 };
 
@@ -45,7 +48,9 @@ enum {
     NodeType_Add,
     NodeType_Sub,
     NodeType_Mul,
-    NodeType_Div
+    NodeType_Div,
+    NodeType_Positive,
+    NodeType_Negative,
 };
 
 typedef u32 Precedence;
@@ -64,10 +69,10 @@ typedef struct Parser {
 } Parser;
 
 GLOBAL_VARIABLE Precedence precedence_lookup[Token_Max] = {
-    [Token_Add] = Precedence_Term,
-    [Token_Sub] = Precedence_Term,
-    [Token_Div] = Precedence_Factor,
-    [Token_Mul] = Precedence_Factor,
+    [Token_Plus]  = Precedence_Term,
+    [Token_Minus] = Precedence_Term,
+    [Token_Slash] = Precedence_Factor,
+    [Token_Star]  = Precedence_Factor,
 };
 
 typedef struct ExpressionNode ExpressionNode;
@@ -97,17 +102,19 @@ ExpressionNode *
 parser_parse_expression(Arena *arena, Parser *parser, Precedence prev_prec);
 ExpressionNode *parser_parse_infix_expr(
     Arena *arena, Parser *parser, Token operator, ExpressionNode * left);
+void pretty_print_expression_node(const ExpressionNode *node, int indent_level);
+void print_indent(u32 indent_level);
 
 i32 main()
 {
     Arena arena;
     arena_init(&arena, 4096);
-    char *string = "12.01 - 200";
+    char *string = "12/2";
     printf("test calc\n---------\n");
     printf("%s\n", string);
     String str = StringFromChars(string);
     printf("String %s, len: %d\n", str.chars, str.len);
-    Token *token_list = (Token *)arena_alloc(&arena, 100 * sizeof(Token));
+    Token *token_list = (Token *)arena_alloc(&arena, str.len * sizeof(Token));
     tokenize(token_list, str);
 
     Parser parser = {
@@ -116,19 +123,24 @@ i32 main()
         .curr_token_idx = 0,
         .str            = str};
 
-    i32 i;
-    for (i = 0; i < 10; ++i) {
-        printf("%u\t%u\n", token_list[i].type, token_list[i].start);
-    }
+    /*i32 i;*/
+    /*while (token_list[i].type != Token_Error) {*/
+    /*    printf("%u\t%u\n", token_list[i].type, token_list[i].start);*/
+    /*    ++i;*/
+    /*}*/
+
+    ExpressionNode *AST_root =
+        parser_parse_expression(&arena, &parser, Precedence_Min);
+    pretty_print_expression_node(AST_root, 0);
 
     /*ExpressionNode left_node  = {NodeType_Number, 1123.04032};*/
     /*ExpressionNode right_node = {NodeType_Number, 23.3};*/
     /*ExpressionNode top_node   = {*/
     /*    NodeType_Mul, {.binary = {&left_node, &right_node}}};*/
     /**/
-    /*f64 result = evaluate(&top_node);*/
+    f64 result = evaluate(AST_root);
 
-    /*printf("result: %.2e\n", result);*/
+    printf("result: %.7f\n", result);
 
     arena_free(&arena);
     return 0;
@@ -149,6 +161,10 @@ f64 evaluate(ExpressionNode *node)
             return evaluate(node->binary.left) * evaluate(node->binary.right);
         case NodeType_Sub:
             return evaluate(node->binary.left) - evaluate(node->binary.right);
+        case NodeType_Positive:
+            return evaluate(node->unary.operand);
+        case NodeType_Negative:
+            return -evaluate(node->unary.operand);
     }
     return 0.0;
 }
@@ -190,19 +206,19 @@ ExpressionNode *parser_parse_infix_expr(
 {
     ExpressionNode *ret_node = arena_alloc(arena, sizeof(ExpressionNode));
     switch (operator.type) {
-        case Token_Add:
+        case Token_Plus:
             ret_node->type = NodeType_Add;
             break;
 
-        case Token_Sub:
+        case Token_Minus:
             ret_node->type = NodeType_Sub;
             break;
 
-        case Token_Mul:
+        case Token_Star:
             ret_node->type = NodeType_Mul;
             break;
 
-        case Token_Div:
+        case Token_Slash:
             ret_node->type = NodeType_Div;
             break;
         default:
@@ -217,11 +233,37 @@ ExpressionNode *parser_parse_infix_expr(
     return ret_node;
 }
 
+ExpressionNode *parser_parse_terminal_expr(Arena *arena, Parser *parser);
+ExpressionNode *parser_parse_terminal_expr(Arena *arena, Parser *parser)
+{
+    ExpressionNode *ret_node = 0;
+    if (parser->current.type == Token_Number) {
+        ret_node = parser_parse_number(arena, parser, &parser->str);
+    } else if (parser->current.type == Token_ParensOpen) {
+        parser_advance(parser);
+        ret_node = parser_parse_expression(arena, parser, Precedence_Min);
+        if (parser->current.type == Token_ParensClose) {
+            parser_advance(parser);
+        }
+    } else if (parser->current.type == Token_Plus) {
+        parser_advance(parser);
+        ret_node                = arena_alloc(arena, sizeof(ExpressionNode));
+        ret_node->type          = NodeType_Positive;
+        ret_node->unary.operand = parser_parse_terminal_expr(arena, parser);
+    } else if (parser->current.type == Token_Minus) {
+        parser_advance(parser);
+        ret_node                = arena_alloc(arena, sizeof(ExpressionNode));
+        ret_node->type          = NodeType_Negative;
+        ret_node->unary.operand = parser_parse_terminal_expr(arena, parser);
+    }
+    return ret_node;
+}
+
 ExpressionNode *
 parser_parse_expression(Arena *arena, Parser *parser, Precedence prev_prec)
 {
     /*Recurvise*/
-    ExpressionNode *left = parser_parse_number(arena, parser, &parser->str);
+    ExpressionNode *left = parser_parse_terminal_expr(arena, parser);
     Token curr_operator  = parser->current;
     Precedence curr_prec = precedence_lookup[curr_operator.type];
     while (Precedence_Min != curr_prec) {
@@ -237,6 +279,67 @@ parser_parse_expression(Arena *arena, Parser *parser, Precedence prev_prec)
     return left;
 };
 
+void print_indent(u32 indent_level)
+{
+    i32 i;
+    for (i = 0; i < indent_level; ++i) {
+        printf("  ");
+    }
+    printf("|-");
+}
+void pretty_print_expression_node(const ExpressionNode *node, int indent_level)
+{
+    if (node == NULL) {
+        print_indent(indent_level);
+        printf("[NULL Node]\n");
+        return;
+    }
+
+    print_indent(indent_level);
+
+    switch (node->type) {
+        case NodeType_Number:
+            printf("NUMBER: %f\n", node->number);
+            break;
+
+        case NodeType_Negative:
+            printf("NEGATIVE\n");
+            break;
+
+        case NodeType_Positive:
+            printf("POSITIVE\n");
+            break;
+
+        case NodeType_Add:
+            printf("BINARY ADD\n");
+            pretty_print_expression_node(node->binary.right, indent_level + 1);
+            pretty_print_expression_node(node->binary.left, indent_level + 1);
+            break;
+
+        case NodeType_Sub:
+            printf("BINARY SUBTRACT\n");
+            pretty_print_expression_node(node->binary.right, indent_level + 1);
+            pretty_print_expression_node(node->binary.left, indent_level + 1);
+            break;
+
+        case NodeType_Mul:
+            printf("BINARY MULTIPLY\n");
+            pretty_print_expression_node(node->binary.right, indent_level + 1);
+            pretty_print_expression_node(node->binary.left, indent_level + 1);
+            break;
+
+        case NodeType_Div:
+            printf("BINARY DIVIDE\n");
+            pretty_print_expression_node(node->binary.right, indent_level + 1);
+            pretty_print_expression_node(node->binary.left, indent_level + 1);
+            break;
+
+        default:
+            printf("UNKNOWN NODE TYPE\n");
+            break;
+    }
+}
+
 void tokenize(Token *token_list, const String str)
 {
     i32 lenght    = str.len;
@@ -250,30 +353,42 @@ void tokenize(Token *token_list, const String str)
             Token token           = {Token_Number, i};
             token_list[token_idx] = token;
             ++token_idx;
-            i += token_len;
+            i += token_len - 1;
 
             printf("NumberToken with lenght: %d\n", token_len);
 
         } else if ('*' == current_char) {
-            Token token           = {Token_Mul, i};
+            Token token           = {Token_Star, i};
             token_list[token_idx] = token;
             printf("MultipyToken\n");
             ++token_idx;
 
+        } else if ('(' == current_char) {
+            Token token           = {Token_ParensOpen, i};
+            token_list[token_idx] = token;
+            printf("ParensOpenToken\n");
+            ++token_idx;
+
+        } else if (')' == current_char) {
+            Token token           = {Token_ParensClose, i};
+            token_list[token_idx] = token;
+            printf("ParensCloseToken\n");
+            ++token_idx;
+
         } else if ('/' == current_char) {
-            Token token           = {Token_Div, i};
+            Token token           = {Token_Slash, i};
             token_list[token_idx] = token;
             printf("DivideToken\n");
             ++token_idx;
 
         } else if ('+' == current_char) {
-            Token token           = {Token_Add, i};
+            Token token           = {Token_Plus, i};
             token_list[token_idx] = token;
             printf("PlusToken\n");
             ++token_idx;
 
         } else if ('-' == current_char) {
-            Token token           = {Token_Sub, i};
+            Token token           = {Token_Minus, i};
             token_list[token_idx] = token;
             printf("MinusToken\n");
             ++token_idx;
