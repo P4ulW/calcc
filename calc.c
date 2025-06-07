@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 #include "arena.c"
 #include "arena.h"
 
@@ -42,6 +43,7 @@ enum {
     NodeType_Sub,
     NodeType_Mul,
     NodeType_Div,
+    NodeType_Pow,
     NodeType_Positive,
     NodeType_Negative,
 };
@@ -114,6 +116,7 @@ static Precedence precedence_lookup[Token_Max] = {
     [Token_Minus] = Precedence_Term,
     [Token_Slash] = Precedence_Factor,
     [Token_Star]  = Precedence_Factor,
+    [Token_Caret] = Precedence_Power,
 };
 
 /*               Main              */
@@ -175,7 +178,7 @@ i32 main(int argc, char *argv[])
 
     arena_init(&arena, ARENA_SIZE);
     char input[INPUT_BUFFER_SIZE];
-    printf("Please input your expression: ");
+    printf("\x1b[32mPlease input your expression: \x1b[0m");
     fgets(input, INPUT_BUFFER_SIZE, stdin);
     input[strcspn(input, "\n")] = 0;
 
@@ -195,7 +198,7 @@ i32 main(int argc, char *argv[])
     /*pretty_print_expression_node(node_root, 0);*/
 
     f64 result = evaluate(node_root);
-    printf("%.3e \n", result);
+    printf("\x1b[4m\x1b[33m%.3e\x1b[0m\n", result);
 
     /*clean up*/
     arena_free(&arena);
@@ -222,6 +225,9 @@ f64 evaluate(ExpressionNode *node)
             return evaluate(node->unary.operand);
         case NodeType_Negative:
             return -evaluate(node->unary.operand);
+        case NodeType_Pow:
+            return pow(
+                evaluate(node->binary.left), evaluate(node->binary.right));
     }
     return 0.0;
 }
@@ -282,6 +288,11 @@ ExpressionNode *parser_parse_infix_expr(
         case Token_Slash:
             ret_node->type = NodeType_Div;
             break;
+
+        case Token_Caret:
+            ret_node->type = NodeType_Pow;
+            break;
+
         default:
             printf(
                 "ParseException. Got wrong token %d at position %d!\n",
@@ -400,6 +411,12 @@ void pretty_print_expression_node(const ExpressionNode *node, int indent_level)
             pretty_print_expression_node(node->binary.left, indent_level + 1);
             break;
 
+        case NodeType_Pow:
+            printf("BINARY POWER\n");
+            pretty_print_expression_node(node->binary.right, indent_level + 1);
+            pretty_print_expression_node(node->binary.left, indent_level + 1);
+            break;
+
         default:
             printf("UNKNOWN NODE TYPE\n");
             break;
@@ -458,6 +475,12 @@ void tokenize(Token *token_list, const String str)
             Token token           = {Token_Minus, i};
             token_list[token_idx] = token;
             /*printf("MinusToken\n");*/
+            ++token_idx;
+
+        } else if ('^' == current_char) {
+            Token token           = {Token_Caret, i};
+            token_list[token_idx] = token;
+            /*printf("CaretToken\n");*/
             ++token_idx;
 
         } else if (' ' == current_char) {
