@@ -4,6 +4,7 @@
 
 /*
  * TODO:
+ * - impl letter into tokenizer (for e.g. pi, e, etc)
  * - Write token calc function for numbers (ints first)
  * - Write Tokens to AST
  * - Write eval function
@@ -43,15 +44,31 @@ typedef struct token {
     u32 start;
 } Token;
 
-typedef struct ast_node {
-    enum Tag tag;
-    u32 main_token;
-    struct {
-        u32 lhs;
-        u32 rhs;
-    } data;
+typedef u32 ExpressionNodeKind;
+enum {
+    NodeType_Error,
+    NodeType_Number,
+    NodeType_Add,
+    NodeType_Sub,
+    NodeType_Mul,
+    NodeType_Div
+};
 
-} AstNode;
+typedef struct ExpresssionNode ExpressionNode;
+struct ExpressionNode {
+    ExpressionNodeKind type;
+
+    union {
+        f64 number;
+        struct {
+            ExpressionNode *operand;
+        } unary;
+        struct {
+            ExpressionNode *left;
+            ExpressionNode *right;
+        } binary;
+    };
+};
 
 String StringFromChars(char *chars);
 i32 get_token_number(const String *str, i32 offset);
@@ -63,7 +80,7 @@ Token pop_arg();
 Token pop_op();
 
 GLOBAL_VARIABLE Token operator_stack[256];
-GLOBAL_VARIABLE f64 arg_stack[256];
+GLOBAL_VARIABLE Token arg_stack[256];
 GLOBAL_VARIABLE u32 arg_sptr = 0, op_sptr = 0;
 GLOBAL_VARIABLE i32 state = 0; /* 0 = Awaiting expression
                                   1 = Awaiting operator
