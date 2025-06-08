@@ -3,8 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include "arena.c"
-#include "arena.h"
+#include "mem/arena.c"
+#include "mem/arena.h"
 
 #define DEBUG 0
 
