@@ -1,5 +1,5 @@
-#include "arena.h"
-#include "calc.c"
+#include "../src/mem/arena.h"
+#include "../src/calc.c"
 #include <math.h>
 #include <sys/time.h>
 #include <time.h>
